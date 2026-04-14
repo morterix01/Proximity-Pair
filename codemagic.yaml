@@ -1,0 +1,59 @@
+workflows:
+
+  # ── Debug build (no signing required) ─────────────────────────────────────
+  android-debug:
+    name: Android Debug Build
+    max_build_duration: 30
+    environment:
+      java: 21
+    scripts:
+      - name: Build Debug APK
+        script: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+    artifacts:
+      - app/build/outputs/apk/debug/app-debug.apk
+    publishing:
+      email:
+        recipients:
+          - your@email.com          # ← cambia con la tua email
+        notify:
+          success: true
+          failure: true
+
+  # ── Release build (signed APK) ─────────────────────────────────────────────
+  android-release:
+    name: Android Release Build (Signed)
+    max_build_duration: 30
+    environment:
+      java: 21
+      # Aggiungi queste variabili nelle impostazioni di Codemagic:
+      #   CM_KEYSTORE       → il file .jks codificato in base64
+      #   CM_KEYSTORE_PASSWORD
+      #   CM_KEY_ALIAS
+      #   CM_KEY_PASSWORD
+      vars:
+        STORE_PASSWORD: $CM_KEYSTORE_PASSWORD
+        KEY_ALIAS: $CM_KEY_ALIAS
+        KEY_PASSWORD: $CM_KEY_PASSWORD
+    scripts:
+      - name: Decode keystore
+        script: |
+          echo "$CM_KEYSTORE" | base64 --decode > app/release.jks
+      - name: Build Release APK
+        script: |
+          chmod +x gradlew
+          export STORE_PASSWORD="$CM_KEYSTORE_PASSWORD"
+          export KEY_ALIAS="$CM_KEY_ALIAS"
+          export KEY_PASSWORD="$CM_KEY_PASSWORD"
+          ./gradlew assembleRelease --no-daemon --stacktrace
+    artifacts:
+      - app/build/outputs/apk/release/app-release.apk
+      - app/build/outputs/apk/release/app-release-unsigned.apk
+    publishing:
+      email:
+        recipients:
+          - your@email.com          # ← cambia con la tua email
+        notify:
+          success: true
+          failure: true

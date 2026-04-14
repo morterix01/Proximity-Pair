@@ -1,0 +1,12 @@
+*.iml
+/.gradle/
+/local.properties
+/.idea/
+build/
+/app/debug/
+/app/release/
+
+# Signing keys - never commit these
+*.jks
+*.keystore
+release.jks
