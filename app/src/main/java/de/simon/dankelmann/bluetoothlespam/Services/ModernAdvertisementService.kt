@@ -37,7 +37,8 @@ class ModernAdvertisementService: IAdvertisementService{
     private var _retryDelayMs = 10L // Molto più veloce
 
     // BURST MODE: Mappe per supportare sessioni multiple
-    private val _activeSets = mutableMapOf<String, AdvertisementSet>()
+    // FIX: Non usare la stringa (Titolo) per evitare collisioni! Usa l'oggetto Callback fisico!
+    private val _activeAdvertisers = mutableMapOf<AdvertisingSetCallback, AdvertisementSet>()
     private val _maxConcurrentSlots = 3 // Quante sessioni parallele permettiamo all'hardware
 
     // Payload blocked quick fallback
@@ -62,8 +63,8 @@ class ModernAdvertisementService: IAdvertisementService{
             advertisementSet.advertiseSettings.txPowerLevel = _txPowerLevel!!
             advertisementSet.advertisingSetParameters.txPowerLevel = _txPowerLevel!!
         }
-        // Il Callback ora deve sapere quale set sta gestendo!
-        advertisementSet.advertisingSetCallback = getAdvertisingSetCallback(advertisementSet.title)
+        // Non sovrascriviamo più il callback nell'oggetto condiviso!
+        // Genereremo il callback fresco al momento dello start.
         return advertisementSet
     }
 
@@ -93,21 +94,22 @@ class ModernAdvertisementService: IAdvertisementService{
                     val preparedAdvertisementSet = prepareAdvertisementSet(advertisementSet)
 
                     // BURST MODE: Check Concurrent Limit
-                    if (_activeSets.size >= _maxConcurrentSlots) {
-                        // Rimuoviamo il più vecchio
-                        val oldestKey = _activeSets.keys.first()
-                        val oldestSet = _activeSets[oldestKey]
-                        if (oldestSet != null) {
-                            try {
-                                _advertiser!!.stopAdvertisingSet(oldestSet.advertisingSetCallback)
-                            } catch (e: Exception) {
-                                // Ignore
-                            }
-                            _activeSets.remove(oldestKey)
+                    if (_activeAdvertisers.size >= _maxConcurrentSlots) {
+                        // Rimuoviamo il più vecchio FISICAMENTE
+                        val oldestCallback = _activeAdvertisers.keys.first()
+                        try {
+                            _advertiser!!.stopAdvertisingSet(oldestCallback)
+                        } catch (e: Exception) {
+                            // Ignore
                         }
+                        _activeAdvertisers.remove(oldestCallback)
                     }
 
-                    _activeSets[preparedAdvertisementSet.title] = preparedAdvertisementSet
+                    // Crea un nuovo callback UNIVOCO per questa sessione.
+                    val advertisingSetCallback = getAdvertisingSetCallback(preparedAdvertisementSet)
+                    
+                    // Aggiungiamo alla mappa dei burst attivi
+                    _activeAdvertisers[advertisingSetCallback] = preparedAdvertisementSet
 
                     if (preparedAdvertisementSet.scanResponse != null) {
                         _advertiser!!.startAdvertisingSet(
@@ -116,7 +118,7 @@ class ModernAdvertisementService: IAdvertisementService{
                             preparedAdvertisementSet.scanResponse!!.build(),
                             null,
                             null,
-                            preparedAdvertisementSet.advertisingSetCallback
+                            advertisingSetCallback
                         )
 
                     } else {
@@ -126,10 +128,10 @@ class ModernAdvertisementService: IAdvertisementService{
                             null,
                             null,
                             null,
-                            preparedAdvertisementSet.advertisingSetCallback
+                            advertisingSetCallback
                         )
                     }
-                    Log.d(_logTag, "Started Burst Advertisement [${preparedAdvertisementSet.title}], Concurrent: ${_activeSets.size}")
+                    Log.d(_logTag, "Started Burst Advertisement [${preparedAdvertisementSet.title}], Concurrent: ${_activeAdvertisers.size}")
 
                     _advertisementServiceCallbacks.map {
                         it.onAdvertisementSetStart(advertisementSet)
@@ -150,14 +152,14 @@ class ModernAdvertisementService: IAdvertisementService{
         logDiagnostics("stopAdvertisement Burst")
         if (_advertiser != null) {
             if (PermissionCheck.checkPermission(Manifest.permission.BLUETOOTH_ADVERTISE, AppContext.getActivity())) {
-                _activeSets.values.forEach { set ->
+                _activeAdvertisers.keys.forEach { cb ->
                     try {
-                        _advertiser!!.stopAdvertisingSet(set.advertisingSetCallback)
+                        _advertiser!!.stopAdvertisingSet(cb)
                     } catch (e: Exception) {
                         Log.e(_logTag, "Error stopping burst set: ${e.message}")
                     }
                 }
-                _activeSets.clear()
+                _activeAdvertisers.clear()
             } else {
                 Log.d(_logTag, "Missing permission to stop advertisement")
             }
@@ -193,22 +195,21 @@ class ModernAdvertisementService: IAdvertisementService{
         return false
     }
 
-    private fun getAdvertisingSetCallback(setId: String): AdvertisingSetCallback {
+    private fun getAdvertisingSetCallback(advertisementSet: AdvertisementSet): AdvertisingSetCallback {
         return object : AdvertisingSetCallback() {
             override fun onAdvertisingSetStarted(advertisingSet: AdvertisingSet?, txPower: Int, status: Int) {
-                val currentSet = _activeSets[setId]
                 if (status == AdvertisingSetCallback.ADVERTISE_SUCCESS) {
                     // SUCCESS
                     _startSuccessCount += 1
                     _retryCount = 0
                     clearPendingRetry()
                     _advertisementServiceCallbacks.map {
-                        it.onAdvertisementSetSucceeded(currentSet)
+                        it.onAdvertisementSetSucceeded(advertisementSet)
                     }
                     _payloadBlockedRetryCount = 0
                 } else {
                     _startFailureCount += 1
-                    _activeSets.remove(setId) // Fallito, toglierlo dalla mappa
+                    _activeAdvertisers.remove(this) // Fallito, toglierlo dalla mappa
 
                     // Se è TOO_MANY_ADVERTISERS, l'hardware è saturo. Chiudiamo brutalmente la coda.
                     if(status == AdvertisingSetCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS){
@@ -228,7 +229,7 @@ class ModernAdvertisementService: IAdvertisementService{
                     }
 
                     _advertisementServiceCallbacks.map {
-                        it.onAdvertisementSetFailed(currentSet, advertisementError)
+                        it.onAdvertisementSetFailed(advertisementSet, advertisementError)
                     }
 
                     if(status != AdvertisingSetCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS) {
@@ -246,9 +247,9 @@ class ModernAdvertisementService: IAdvertisementService{
             }
 
             override fun onAdvertisingSetStopped(advertisingSet: AdvertisingSet) {
-                val currentSet = _activeSets.remove(setId)
+                _activeAdvertisers.remove(this)
                 _advertisementServiceCallbacks.map {
-                    it.onAdvertisementSetStop(currentSet)
+                    it.onAdvertisementSetStop(advertisementSet)
                 }
             }
         }
@@ -297,7 +298,7 @@ class ModernAdvertisementService: IAdvertisementService{
     private fun logDiagnostics(source: String) {
         Log.i(
             _logTag,
-            "BLE modern diagnostics [$source] attempts=$_startAttempts success=$_startSuccessCount failure=$_startFailureCount retryScheduled=$_retryScheduledCount BurstSlots=${_activeSets.size}"
+            "BLE modern diagnostics [$source] attempts=$_startAttempts success=$_startSuccessCount failure=$_startFailureCount retryScheduled=$_retryScheduledCount BurstSlots=${_activeAdvertisers.size}"
         )
     }
 
