@@ -39,7 +39,7 @@ class ModernAdvertisementService: IAdvertisementService{
 
     // BURST MODE: Mappe per supportare sessioni multiple thread-safe!
     private val _activeAdvertisers = ConcurrentHashMap<AdvertisingSetCallback, AdvertisementSet>()
-    private val _maxConcurrentSlots = 3 // Quante sessioni parallele permettiamo all'hardware
+    private val _maxConcurrentSlots = 1 // Limitato a 1 per evitare blocco hardware su Android che non supportano multi-slot
 
     // Payload blocked quick fallback
     private var _payloadBlockedRetryCount = 0
