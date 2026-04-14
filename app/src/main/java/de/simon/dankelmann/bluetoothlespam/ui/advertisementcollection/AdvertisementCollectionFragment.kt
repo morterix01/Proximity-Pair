@@ -279,6 +279,11 @@ class AdvertisementCollectionFragment : Fragment() {
     }
 
     fun onContinuityCardViewClicked() {
+        // Forza la modalità RANDOM per Continuity per saltare rapidamente tra Action Modals e Airpods
+        // Questo stratagemma "confonde" il filtro Anti-Spam di iOS 17 che blocca payload ripetitivi
+        AppContext.getAdvertisementSetQueueHandler()
+            .setAdvertisementQueueMode(AdvertisementQueueMode.ADVERTISEMENT_QUEUE_MODE_RANDOM)
+
         navigateToAdvertisementFragmentWithType(
             listOf(
                 AdvertisementSetType.ADVERTISEMENT_TYPE_CONTINUITY_NEW_DEVICE,
