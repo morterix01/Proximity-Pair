@@ -20,6 +20,7 @@ import de.simon.dankelmann.bluetoothlespam.Interfaces.Callbacks.IAdvertisementSe
 import de.simon.dankelmann.bluetoothlespam.Interfaces.Services.IAdvertisementService
 import de.simon.dankelmann.bluetoothlespam.Models.AdvertisementSet
 import de.simon.dankelmann.bluetoothlespam.PermissionCheck.PermissionCheck
+import java.util.concurrent.ConcurrentHashMap
 
 class ModernAdvertisementService: IAdvertisementService{
 
@@ -36,9 +37,8 @@ class ModernAdvertisementService: IAdvertisementService{
     private var _maxRetries = 2
     private var _retryDelayMs = 10L // Molto più veloce
 
-    // BURST MODE: Mappe per supportare sessioni multiple
-    // FIX: Non usare la stringa (Titolo) per evitare collisioni! Usa l'oggetto Callback fisico!
-    private val _activeAdvertisers = mutableMapOf<AdvertisingSetCallback, AdvertisementSet>()
+    // BURST MODE: Mappe per supportare sessioni multiple thread-safe!
+    private val _activeAdvertisers = ConcurrentHashMap<AdvertisingSetCallback, AdvertisementSet>()
     private val _maxConcurrentSlots = 3 // Quante sessioni parallele permettiamo all'hardware
 
     // Payload blocked quick fallback

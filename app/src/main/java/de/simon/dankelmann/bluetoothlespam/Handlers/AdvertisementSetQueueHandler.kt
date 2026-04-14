@@ -371,7 +371,11 @@ class  AdvertisementSetQueueHandler :IAdvertisementServiceCallback{
                 // BURST MODE OVERDRIVE: Ignora il successo o fallimento precedente.
                 // Continuiamo a chiamare advertiseNextAdvertisementSet finché siamo attivi!
                 if(!(_advertisementService?.isLegacyService() ?: true)) {
-                    advertiseNextAdvertisementSet()
+                    try {
+                        advertiseNextAdvertisementSet()
+                    } catch (e: Exception) {
+                        Log.e(_logTag, "Overdrive Tick Error: ${e.message}")
+                    }
                 }
 
                 // E poi ricarichiamoci
