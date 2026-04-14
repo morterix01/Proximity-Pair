@@ -15,6 +15,7 @@ import de.simon.dankelmann.bluetoothlespam.Helpers.StringHelpers
 import de.simon.dankelmann.bluetoothlespam.Models.AdvertisementSet
 import de.simon.dankelmann.bluetoothlespam.Models.ServiceData
 import java.util.UUID
+import kotlin.random.Random
 
 class FastPairDevicesAdvertisementSetGenerator:IAdvertisementSetGenerator{
 
@@ -511,6 +512,28 @@ class FastPairDevicesAdvertisementSetGenerator:IAdvertisementSetGenerator{
 
     val serviceUuid = ParcelUuid(UUID.fromString("0000fe2c-0000-1000-8000-00805f9b34fb"))
 
+    companion object {
+        /**
+         * Randomizza l'ultimo byte del serviceData per evitare che Android
+         * filtri i pacchetti identici e non mostri il pop-up.
+         */
+        fun prepareAdvertisementSet(advertisementSet: AdvertisementSet): AdvertisementSet {
+            if (advertisementSet.advertiseData.services.isNotEmpty()) {
+                val serviceData = advertisementSet.advertiseData.services[0]
+                if (serviceData.serviceData != null && serviceData.serviceData!!.size >= 3) {
+                    // The Fast Pair service data is 3 bytes (model ID).
+                    // We add a random salt byte to vary the advertisement packet.
+                    val original = serviceData.serviceData!!
+                    val withSalt = original.copyOf()
+                    // Vary the last byte slightly to avoid OS-level duplicate filtering
+                    withSalt[withSalt.size - 1] = (withSalt[withSalt.size - 1].toInt() xor (Random.nextInt(15) + 1)).toByte()
+                    serviceData.serviceData = withSalt
+                }
+            }
+            return advertisementSet
+        }
+    }
+
     override fun getAdvertisementSets(inputData: Map<String, String>?): List<AdvertisementSet> {
         var advertisementSets:MutableList<AdvertisementSet> = mutableListOf()
 
@@ -544,9 +567,6 @@ class FastPairDevicesAdvertisementSetGenerator:IAdvertisementSetGenerator{
             serviceData.serviceData = StringHelpers.decodeHex(it.key)
             advertisementSet.advertiseData.services.add(serviceData)
             advertisementSet.advertiseData.includeTxPower = true
-
-            // Scan Response
-            //advertisementSet.scanResponse.includeTxPower = true
 
             // General Data
             advertisementSet.title = it.value

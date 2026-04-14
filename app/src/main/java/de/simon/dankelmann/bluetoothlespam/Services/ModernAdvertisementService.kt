@@ -67,12 +67,10 @@ class ModernAdvertisementService: IAdvertisementService{
 
     // Callback Implementation
     override fun startAdvertisement(advertisementSet: AdvertisementSet) {
-        val optimizedSet = _deviceOptimizer.optimizeForTargetDevice(advertisementSet)
-
-        _lastRequestedAdvertisementSet = optimizedSet
+        _lastRequestedAdvertisementSet = advertisementSet
         _retryCount = 0
         clearPendingRetry()
-        startAdvertisementInternal(optimizedSet)
+        startAdvertisementInternal(advertisementSet)
     }
 
     private fun startAdvertisementInternal(advertisementSet: AdvertisementSet) {

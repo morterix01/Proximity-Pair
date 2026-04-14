@@ -1,6 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory android:title="Appearance">
+        <SwitchPreferenceCompat
+            app:key="@string/preference_key_dark_mode"
+            app:title="@string/preference_title_dark_mode"
+            app:summary="@string/preference_summary_dark_mode"
+            app:defaultValue="false"
+            />
+    </PreferenceCategory>
+
     <PreferenceCategory android:title="Advertising Settings">
         <SwitchPreferenceCompat
             app:key="@string/preference_key_use_legacy_advertising"
@@ -10,13 +20,13 @@
             />
 
         <EditTextPreference
-            android:defaultValue="200"
+            android:defaultValue="100"
             android:digits="0123456789"
             android:inputType="number|numberDecimal"
             android:key="@string/preference_key_interval_advertising_queue_handler"
             android:selectAllOnFocus="true"
             android:singleLine="true"
-            android:summary="Duration of each Advertisement in Milliseconds. Lower = faster spam. Min recommended: 100 ms"
+            android:summary="Duration of each Advertisement in Milliseconds. Lower = faster spam. Min recommended: 50 ms"
             android:title="Advertisement Duration (ms)" />
     </PreferenceCategory>
 

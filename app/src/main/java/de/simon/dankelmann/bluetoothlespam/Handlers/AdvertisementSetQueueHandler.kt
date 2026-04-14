@@ -8,6 +8,8 @@ import de.simon.dankelmann.bluetoothlespam.AdvertisementSetGenerators.Continuity
 import de.simon.dankelmann.bluetoothlespam.AdvertisementSetGenerators.ContinuityNewAirtagPopUpAdvertisementSetGenerator
 import de.simon.dankelmann.bluetoothlespam.AdvertisementSetGenerators.ContinuityNewDevicePopUpAdvertisementSetGenerator
 import de.simon.dankelmann.bluetoothlespam.AdvertisementSetGenerators.ContinuityNotYourDevicePopUpAdvertisementSetGenerator
+import de.simon.dankelmann.bluetoothlespam.AdvertisementSetGenerators.EasySetupBudsAdvertisementSetGenerator
+import de.simon.dankelmann.bluetoothlespam.AdvertisementSetGenerators.FastPairDevicesAdvertisementSetGenerator
 import de.simon.dankelmann.bluetoothlespam.AppContext.AppContext
 import de.simon.dankelmann.bluetoothlespam.Enums.AdvertisementError
 import de.simon.dankelmann.bluetoothlespam.Enums.AdvertisementQueueMode
@@ -211,13 +213,18 @@ class  AdvertisementSetQueueHandler :IAdvertisementServiceCallback{
 
     fun prepareAdvertisementSet(advertisementSet: AdvertisementSet):AdvertisementSet{
         when(advertisementSet.type){
-            // Continuity
+            // Continuity (iOS)
             AdvertisementSetType.ADVERTISEMENT_TYPE_CONTINUITY_NEW_DEVICE -> return ContinuityNewDevicePopUpAdvertisementSetGenerator.prepareAdvertisementSet(advertisementSet)
             AdvertisementSetType.ADVERTISEMENT_TYPE_CONTINUITY_NEW_AIRTAG -> return ContinuityNewAirtagPopUpAdvertisementSetGenerator.prepareAdvertisementSet(advertisementSet)
             AdvertisementSetType.ADVERTISEMENT_TYPE_CONTINUITY_NOT_YOUR_DEVICE -> return ContinuityNotYourDevicePopUpAdvertisementSetGenerator.prepareAdvertisementSet(advertisementSet)
-
             AdvertisementSetType.ADVERTISEMENT_TYPE_CONTINUITY_ACTION_MODALS -> return ContinuityActionModalAdvertisementSetGenerator.prepareAdvertisementSet(advertisementSet)
             AdvertisementSetType.ADVERTISEMENT_TYPE_CONTINUITY_IOS_17_CRASH -> return ContinuityIos17CrashAdvertisementSetGenerator.prepareAdvertisementSet(advertisementSet)
+
+            // Android Fast Pair - randomizza il payload per bypassare filtro duplicati
+            AdvertisementSetType.ADVERTISEMENT_TYPE_FAST_PAIRING_DEVICE -> return FastPairDevicesAdvertisementSetGenerator.prepareAdvertisementSet(advertisementSet)
+
+            // Samsung EasySetup - randomizza bytes trailing
+            AdvertisementSetType.ADVERTISEMENT_TYPE_EASY_SETUP_BUDS -> return EasySetupBudsAdvertisementSetGenerator.prepareAdvertisementSet(advertisementSet)
 
             else -> return advertisementSet
         }
