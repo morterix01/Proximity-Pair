@@ -73,7 +73,6 @@ class ModernAdvertisementService: IAdvertisementService{
     override fun startAdvertisement(advertisementSet: AdvertisementSet) {
         _lastRequestedAdvertisementSet = advertisementSet
         _retryCount = 0
-        clearPendingRetry()
         startAdvertisementInternal(advertisementSet)
     }
 
@@ -148,7 +147,6 @@ class ModernAdvertisementService: IAdvertisementService{
     }
 
     override fun stopAdvertisement() {
-        clearPendingRetry()
         logDiagnostics("stopAdvertisement Burst")
         if (_advertiser != null) {
             if (PermissionCheck.checkPermission(Manifest.permission.BLUETOOTH_ADVERTISE, AppContext.getActivity())) {
@@ -201,22 +199,13 @@ class ModernAdvertisementService: IAdvertisementService{
                 if (status == AdvertisingSetCallback.ADVERTISE_SUCCESS) {
                     // SUCCESS
                     _startSuccessCount += 1
-                    _retryCount = 0
-                    clearPendingRetry()
                     _advertisementServiceCallbacks.map {
                         it.onAdvertisementSetSucceeded(advertisementSet)
                     }
-                    _payloadBlockedRetryCount = 0
                 } else {
                     _startFailureCount += 1
                     _activeAdvertisers.remove(this) // Fallito, toglierlo dalla mappa
 
-                    // Se è TOO_MANY_ADVERTISERS, l'hardware è saturo. Chiudiamo brutalmente la coda.
-                    if(status == AdvertisingSetCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS){
-                        stopAdvertisement()
-                    }
-
-                    // FAIL
                     val advertisementError = when (status) {
                         AdvertisingSetCallback.ADVERTISE_FAILED_ALREADY_STARTED -> AdvertisementError.ADVERTISE_FAILED_ALREADY_STARTED
                         AdvertisingSetCallback.ADVERTISE_FAILED_FEATURE_UNSUPPORTED -> AdvertisementError.ADVERTISE_FAILED_FEATURE_UNSUPPORTED
@@ -230,10 +219,6 @@ class ModernAdvertisementService: IAdvertisementService{
 
                     _advertisementServiceCallbacks.map {
                         it.onAdvertisementSetFailed(advertisementSet, advertisementError)
-                    }
-
-                    if(status != AdvertisingSetCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS) {
-                        scheduleRetry(advertisementError)
                     }
                 }
             }
@@ -255,50 +240,10 @@ class ModernAdvertisementService: IAdvertisementService{
         }
     }
 
-    private fun scheduleRetry(advertisementError: AdvertisementError) {
-        val isPayloadBlocked = advertisementError == AdvertisementError.ADVERTISE_FAILED_DATA_TOO_LARGE
-        val retriableError = isPayloadBlocked ||
-                advertisementError == AdvertisementError.ADVERTISE_FAILED_ALREADY_STARTED ||
-                advertisementError == AdvertisementError.ADVERTISE_FAILED_INTERNAL_ERROR
-
-        if (!retriableError) {
-            return
-        }
-
-        if (isPayloadBlocked) {
-            if (_payloadBlockedRetryCount >= _maxPayloadBlockedRetries) {
-                Log.w(_logTag, "Payload blocked (Data too large) - skipping advertisement")
-                return
-            }
-            _payloadBlockedRetryCount += 1
-        } else {
-            if (_retryCount >= _maxRetries) {
-                return
-            }
-            _retryCount += 1
-        }
-
-        val advertisementSet = _lastRequestedAdvertisementSet ?: return
-        _retryScheduledCount += 1
-        clearPendingRetry()
-
-        _retryRunnable = Runnable {
-            startAdvertisementInternal(advertisementSet)
-        }
-
-        val delay = if (isPayloadBlocked) _payloadBlockedRetryDelayMs else (_retryDelayMs * _retryCount)
-        _retryHandler.postDelayed(_retryRunnable!!, delay)
-    }
-
-    private fun clearPendingRetry() {
-        _retryRunnable?.let { _retryHandler.removeCallbacks(it) }
-        _retryRunnable = null
-    }
-
     private fun logDiagnostics(source: String) {
         Log.i(
             _logTag,
-            "BLE modern diagnostics [$source] attempts=$_startAttempts success=$_startSuccessCount failure=$_startFailureCount retryScheduled=$_retryScheduledCount BurstSlots=${_activeAdvertisers.size}"
+            "BLE modern diagnostics [$source] attempts=$_startAttempts success=$_startSuccessCount failure=$_startFailureCount BurstSlots=${_activeAdvertisers.size}"
         )
     }
 
