@@ -24,22 +24,23 @@ class SwiftPairAdvertisementSetGenerator : IAdvertisementSetGenerator {
 
     private val _prependedBytes = StringHelpers.decodeHex("030080")
 
-    // Nomi dispositivi realistici per bypassare il filtro duplicati di Windows
+    // Nomi dispositivi realistici ma CORTI per evitare ADVERTISE_FAILED_DATA_TOO_LARGE
+    // Massimo 19 caratteri!
     private val _deviceNames = mapOf(
-        "Surface Headphones 2" to "Microsoft",
+        "Surface Headphones" to "Microsoft",
         "Surface Earbuds" to "Microsoft",
-        "Xbox Wireless Controller" to "Microsoft",
+        "Xbox Controller" to "Microsoft",
         "JBL Tune 760NC" to "JBL",
         "Sony WH-1000XM5" to "Sony",
         "Galaxy Buds2 Pro" to "Samsung",
-        "Bose QuietComfort 45" to "Bose",
+        "Bose QC 45" to "Bose",
         "AirPods Pro" to "Apple",
         "Jabra Elite 10" to "Jabra",
         "Pixel Buds Pro" to "Google",
         "Beats Studio Pro" to "Beats",
-        "Razer Hammerhead TWS" to "Razer",
-        "Sennheiser Momentum 4" to "Sennheiser",
-        "Bang & Olufsen Beoplay H95" to "B&O",
+        "Razer Hammerhead" to "Razer",
+        "Sennheiser HD" to "Sennheiser",
+        "Beoplay H95" to "B&O",
         "LG TONE Free FP9" to "LG",
     )
 
