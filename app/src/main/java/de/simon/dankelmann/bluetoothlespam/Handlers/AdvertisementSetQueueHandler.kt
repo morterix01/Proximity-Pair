@@ -350,15 +350,9 @@ class  AdvertisementSetQueueHandler :IAdvertisementServiceCallback{
     }
 
     fun onAdvertisementSucceeded(){
-        if(_advertisementService != null){
-            _advertisementService!!.stopAdvertisement()
-
-            if(_advertisementService!!.isLegacyService()){
-                advertiseNextAdvertisementSet()
-            } else {
-                // Wait for the Stop Advertising Callback
-            }
-        }
+        // BURST MODE: Non chiamiamo più _advertisementService!!.stopAdvertisement() qui!
+        // Lasciamo che sia il Service a gestire la coda dei Concurrent Sets.
+        // E non saltiamo automaticamente al prossimo pacchetto se non siamo nel legacy
     }
 
     fun onAdvertisementFailed(){
@@ -373,11 +367,16 @@ class  AdvertisementSetQueueHandler :IAdvertisementServiceCallback{
                 if(!_active){
                     return
                 }
-                if(success){
-                    onAdvertisementSucceeded()
-                } else {
-                    onAdvertisementFailed()
+                
+                // BURST MODE OVERDRIVE: Ignora il successo o fallimento precedente.
+                // Continuiamo a chiamare advertiseNextAdvertisementSet finché siamo attivi!
+                if(!(_advertisementService?.isLegacyService() ?: true)) {
+                    advertiseNextAdvertisementSet()
                 }
+
+                // E poi ricarichiamoci
+                val nextInterval = customInterval ?: _interval
+                _callbackHandler.postDelayed(this, nextInterval)
             }
         }
         _callbackHandler.postDelayed(_pendingLocalCallback!!, customInterval ?: _interval)
@@ -408,9 +407,8 @@ class  AdvertisementSetQueueHandler :IAdvertisementServiceCallback{
             }
         }
 
-        if(_advertisementService != null && !_advertisementService!!.isLegacyService()){
-            advertiseNextAdvertisementSet()
-        }
+        // BURST MODE: Non chiamiamo più advertiseNextAdvertisementSet() qui.
+        // Ci pensa il Ticker (runLocalCallback) a farlo indipendentemente.
     }
 
     override fun onAdvertisementSetSucceeded(advertisementSet: AdvertisementSet?) {

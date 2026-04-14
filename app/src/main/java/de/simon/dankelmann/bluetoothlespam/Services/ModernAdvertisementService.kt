@@ -27,20 +27,23 @@ class ModernAdvertisementService: IAdvertisementService{
     private val _logTag = "AdvertisementService"
     private var _bluetoothAdapter: BluetoothAdapter? = null
     private var _advertiser: BluetoothLeAdvertiser? = null
-    private var _advertisementServiceCallbacks:MutableList<IAdvertisementServiceCallback> = mutableListOf()
-    private var _currentAdvertisementSet: AdvertisementSet? = null
+    private var _advertisementServiceCallbacks: MutableList<IAdvertisementServiceCallback> = mutableListOf()
     private var _lastRequestedAdvertisementSet: AdvertisementSet? = null
-    private var _txPowerLevel:TxPowerLevel? = null
+    private var _txPowerLevel: TxPowerLevel? = null
     private val _retryHandler = Handler(Looper.getMainLooper())
     private var _retryRunnable: Runnable? = null
     private var _retryCount = 0
     private var _maxRetries = 2
-    private var _retryDelayMs = 100L
+    private var _retryDelayMs = 10L // Molto più veloce
+
+    // BURST MODE: Mappe per supportare sessioni multiple
+    private val _activeSets = mutableMapOf<String, AdvertisementSet>()
+    private val _maxConcurrentSlots = 3 // Quante sessioni parallele permettiamo all'hardware
 
     // Payload blocked quick fallback
     private var _payloadBlockedRetryCount = 0
     private val _maxPayloadBlockedRetries = 1
-    private val _payloadBlockedRetryDelayMs = 50L
+    private val _payloadBlockedRetryDelayMs = 20L
     private var _startAttempts = 0
     private var _startSuccessCount = 0
     private var _startFailureCount = 0
@@ -49,20 +52,20 @@ class ModernAdvertisementService: IAdvertisementService{
 
     init {
         _bluetoothAdapter = AppContext.getContext().bluetoothAdapter()
-        if(_bluetoothAdapter != null){
+        if (_bluetoothAdapter != null) {
             _advertiser = _bluetoothAdapter!!.bluetoothLeAdvertiser
         }
     }
 
-    fun prepareAdvertisementSet(advertisementSet: AdvertisementSet):AdvertisementSet{
-        if(_txPowerLevel != null){
+    fun prepareAdvertisementSet(advertisementSet: AdvertisementSet): AdvertisementSet {
+        if (_txPowerLevel != null) {
             advertisementSet.advertiseSettings.txPowerLevel = _txPowerLevel!!
             advertisementSet.advertisingSetParameters.txPowerLevel = _txPowerLevel!!
         }
-        advertisementSet.advertisingSetCallback = getAdvertisingSetCallback()
+        // Il Callback ora deve sapere quale set sta gestendo!
+        advertisementSet.advertisingSetCallback = getAdvertisingSetCallback(advertisementSet.title)
         return advertisementSet
     }
-
 
 
     // Callback Implementation
@@ -75,27 +78,59 @@ class ModernAdvertisementService: IAdvertisementService{
 
     private fun startAdvertisementInternal(advertisementSet: AdvertisementSet) {
         _startAttempts += 1
-        if(_bluetoothAdapter?.isEnabled != true){
+        if (_bluetoothAdapter?.isEnabled != true) {
             Log.d(_logTag, "Bluetooth disabled, cannot start advertisement")
             return
         }
 
-        if(_advertiser == null && _bluetoothAdapter != null){
+        if (_advertiser == null && _bluetoothAdapter != null) {
             _advertiser = _bluetoothAdapter!!.bluetoothLeAdvertiser
         }
 
-        if(_advertiser != null){
-            if(advertisementSet.validate()){
-                if(PermissionCheck.checkPermission(Manifest.permission.BLUETOOTH_ADVERTISE, AppContext.getActivity())){
+        if (_advertiser != null) {
+            if (advertisementSet.validate()) {
+                if (PermissionCheck.checkPermission(Manifest.permission.BLUETOOTH_ADVERTISE, AppContext.getActivity())) {
                     val preparedAdvertisementSet = prepareAdvertisementSet(advertisementSet)
-                    if(preparedAdvertisementSet.scanResponse != null){
-                        _advertiser!!.startAdvertisingSet(preparedAdvertisementSet.advertisingSetParameters.build(), preparedAdvertisementSet.advertiseData.build(), preparedAdvertisementSet.scanResponse!!.build(), null, null, preparedAdvertisementSet.advertisingSetCallback)
+
+                    // BURST MODE: Check Concurrent Limit
+                    if (_activeSets.size >= _maxConcurrentSlots) {
+                        // Rimuoviamo il più vecchio
+                        val oldestKey = _activeSets.keys.first()
+                        val oldestSet = _activeSets[oldestKey]
+                        if (oldestSet != null) {
+                            try {
+                                _advertiser!!.stopAdvertisingSet(oldestSet.advertisingSetCallback)
+                            } catch (e: Exception) {
+                                // Ignore
+                            }
+                            _activeSets.remove(oldestKey)
+                        }
+                    }
+
+                    _activeSets[preparedAdvertisementSet.title] = preparedAdvertisementSet
+
+                    if (preparedAdvertisementSet.scanResponse != null) {
+                        _advertiser!!.startAdvertisingSet(
+                            preparedAdvertisementSet.advertisingSetParameters.build(),
+                            preparedAdvertisementSet.advertiseData.build(),
+                            preparedAdvertisementSet.scanResponse!!.build(),
+                            null,
+                            null,
+                            preparedAdvertisementSet.advertisingSetCallback
+                        )
 
                     } else {
-                        _advertiser!!.startAdvertisingSet(preparedAdvertisementSet.advertisingSetParameters.build(), preparedAdvertisementSet.advertiseData.build(), null, null, null, preparedAdvertisementSet.advertisingSetCallback)
+                        _advertiser!!.startAdvertisingSet(
+                            preparedAdvertisementSet.advertisingSetParameters.build(),
+                            preparedAdvertisementSet.advertiseData.build(),
+                            null,
+                            null,
+                            null,
+                            preparedAdvertisementSet.advertisingSetCallback
+                        )
                     }
-                    Log.d(_logTag, "Started Modern Advertisement")
-                    _currentAdvertisementSet = preparedAdvertisementSet
+                    Log.d(_logTag, "Started Burst Advertisement [${preparedAdvertisementSet.title}], Concurrent: ${_activeSets.size}")
+
                     _advertisementServiceCallbacks.map {
                         it.onAdvertisementSetStart(advertisementSet)
                     }
@@ -112,18 +147,19 @@ class ModernAdvertisementService: IAdvertisementService{
 
     override fun stopAdvertisement() {
         clearPendingRetry()
-        logDiagnostics("stopAdvertisement")
-        if(_advertiser != null){
-            if(_currentAdvertisementSet != null){
-                if(PermissionCheck.checkPermission(Manifest.permission.BLUETOOTH_ADVERTISE, AppContext.getActivity())){
-                    _advertiser!!.stopAdvertisingSet(_currentAdvertisementSet!!.advertisingSetCallback)
-                    _currentAdvertisementSet = null
-                    _lastRequestedAdvertisementSet = null
-                } else {
-                    Log.d(_logTag, "Missing permission to stop advertisement")
+        logDiagnostics("stopAdvertisement Burst")
+        if (_advertiser != null) {
+            if (PermissionCheck.checkPermission(Manifest.permission.BLUETOOTH_ADVERTISE, AppContext.getActivity())) {
+                _activeSets.values.forEach { set ->
+                    try {
+                        _advertiser!!.stopAdvertisingSet(set.advertisingSetCallback)
+                    } catch (e: Exception) {
+                        Log.e(_logTag, "Error stopping burst set: ${e.message}")
+                    }
                 }
+                _activeSets.clear()
             } else {
-                Log.d(_logTag, "Current Modern Advertising Set is null")
+                Log.d(_logTag, "Missing permission to stop advertisement")
             }
         } else {
             Log.d(_logTag, "Advertiser is null")
@@ -134,20 +170,21 @@ class ModernAdvertisementService: IAdvertisementService{
         _txPowerLevel = txPowerLevel
     }
 
-    override fun getTxPowerLevel(): TxPowerLevel{
-        if(_txPowerLevel != null){
+    override fun getTxPowerLevel(): TxPowerLevel {
+        if (_txPowerLevel != null) {
             return _txPowerLevel!!
         }
         return TxPowerLevel.TX_POWER_HIGH
     }
 
-    override fun addAdvertisementServiceCallback(callback: IAdvertisementServiceCallback){
-        if(!_advertisementServiceCallbacks.contains(callback)){
+    override fun addAdvertisementServiceCallback(callback: IAdvertisementServiceCallback) {
+        if (!_advertisementServiceCallbacks.contains(callback)) {
             _advertisementServiceCallbacks.add(callback)
         }
     }
-    override fun removeAdvertisementServiceCallback(callback: IAdvertisementServiceCallback){
-        if(_advertisementServiceCallbacks.contains(callback)){
+
+    override fun removeAdvertisementServiceCallback(callback: IAdvertisementServiceCallback) {
+        if (_advertisementServiceCallbacks.contains(callback)) {
             _advertisementServiceCallbacks.remove(callback)
         }
     }
@@ -156,20 +193,28 @@ class ModernAdvertisementService: IAdvertisementService{
         return false
     }
 
-    private fun getAdvertisingSetCallback(): AdvertisingSetCallback {
+    private fun getAdvertisingSetCallback(setId: String): AdvertisingSetCallback {
         return object : AdvertisingSetCallback() {
             override fun onAdvertisingSetStarted(advertisingSet: AdvertisingSet?, txPower: Int, status: Int) {
-                if(status == AdvertisingSetCallback.ADVERTISE_SUCCESS){
+                val currentSet = _activeSets[setId]
+                if (status == AdvertisingSetCallback.ADVERTISE_SUCCESS) {
                     // SUCCESS
                     _startSuccessCount += 1
                     _retryCount = 0
                     clearPendingRetry()
-                    _advertisementServiceCallbacks.map{
-                        it.onAdvertisementSetSucceeded(_currentAdvertisementSet)
+                    _advertisementServiceCallbacks.map {
+                        it.onAdvertisementSetSucceeded(currentSet)
                     }
                     _payloadBlockedRetryCount = 0
-                } else{
+                } else {
                     _startFailureCount += 1
+                    _activeSets.remove(setId) // Fallito, toglierlo dalla mappa
+
+                    // Se è TOO_MANY_ADVERTISERS, l'hardware è saturo. Chiudiamo brutalmente la coda.
+                    if(status == AdvertisingSetCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS){
+                        stopAdvertisement()
+                    }
+
                     // FAIL
                     val advertisementError = when (status) {
                         AdvertisingSetCallback.ADVERTISE_FAILED_ALREADY_STARTED -> AdvertisementError.ADVERTISE_FAILED_ALREADY_STARTED
@@ -177,14 +222,18 @@ class ModernAdvertisementService: IAdvertisementService{
                         AdvertisingSetCallback.ADVERTISE_FAILED_INTERNAL_ERROR -> AdvertisementError.ADVERTISE_FAILED_INTERNAL_ERROR
                         AdvertisingSetCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS -> AdvertisementError.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS
                         AdvertisingSetCallback.ADVERTISE_FAILED_DATA_TOO_LARGE -> AdvertisementError.ADVERTISE_FAILED_DATA_TOO_LARGE
-                        else -> {AdvertisementError.ADVERTISE_FAILED_UNKNOWN}
+                        else -> {
+                            AdvertisementError.ADVERTISE_FAILED_UNKNOWN
+                        }
                     }
 
-                    _advertisementServiceCallbacks.map{
-                        it.onAdvertisementSetFailed(_currentAdvertisementSet, advertisementError)
+                    _advertisementServiceCallbacks.map {
+                        it.onAdvertisementSetFailed(currentSet, advertisementError)
                     }
 
-                    scheduleRetry(advertisementError)
+                    if(status != AdvertisingSetCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS) {
+                        scheduleRetry(advertisementError)
+                    }
                 }
             }
 
@@ -197,21 +246,21 @@ class ModernAdvertisementService: IAdvertisementService{
             }
 
             override fun onAdvertisingSetStopped(advertisingSet: AdvertisingSet) {
-                _advertisementServiceCallbacks.map{
-                    it.onAdvertisementSetStop(_currentAdvertisementSet)
+                val currentSet = _activeSets.remove(setId)
+                _advertisementServiceCallbacks.map {
+                    it.onAdvertisementSetStop(currentSet)
                 }
             }
         }
     }
 
-    private fun scheduleRetry(advertisementError: AdvertisementError){
+    private fun scheduleRetry(advertisementError: AdvertisementError) {
         val isPayloadBlocked = advertisementError == AdvertisementError.ADVERTISE_FAILED_DATA_TOO_LARGE
         val retriableError = isPayloadBlocked ||
                 advertisementError == AdvertisementError.ADVERTISE_FAILED_ALREADY_STARTED ||
-                advertisementError == AdvertisementError.ADVERTISE_FAILED_INTERNAL_ERROR ||
-                advertisementError == AdvertisementError.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS
+                advertisementError == AdvertisementError.ADVERTISE_FAILED_INTERNAL_ERROR
 
-        if(!retriableError){
+        if (!retriableError) {
             return
         }
 
@@ -233,11 +282,6 @@ class ModernAdvertisementService: IAdvertisementService{
         clearPendingRetry()
 
         _retryRunnable = Runnable {
-            if(_currentAdvertisementSet != null){
-                runCatching {
-                    _advertiser?.stopAdvertisingSet(_currentAdvertisementSet!!.advertisingSetCallback)
-                }
-            }
             startAdvertisementInternal(advertisementSet)
         }
 
@@ -245,15 +289,15 @@ class ModernAdvertisementService: IAdvertisementService{
         _retryHandler.postDelayed(_retryRunnable!!, delay)
     }
 
-    private fun clearPendingRetry(){
+    private fun clearPendingRetry() {
         _retryRunnable?.let { _retryHandler.removeCallbacks(it) }
         _retryRunnable = null
     }
 
-    private fun logDiagnostics(source: String){
+    private fun logDiagnostics(source: String) {
         Log.i(
             _logTag,
-            "BLE modern diagnostics [$source] attempts=$_startAttempts success=$_startSuccessCount failure=$_startFailureCount retryScheduled=$_retryScheduledCount"
+            "BLE modern diagnostics [$source] attempts=$_startAttempts success=$_startSuccessCount failure=$_startFailureCount retryScheduled=$_retryScheduledCount BurstSlots=${_activeSets.size}"
         )
     }
 

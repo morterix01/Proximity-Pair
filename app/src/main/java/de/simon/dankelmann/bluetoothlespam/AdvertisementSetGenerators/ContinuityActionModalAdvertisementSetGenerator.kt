@@ -58,7 +58,7 @@ class  ContinuityActionModalAdvertisementSetGenerator: IAdvertisementSetGenerato
                     // Change flag dynamically each cycle to bypass iOS 17.2+ filters
                     // Rotating between C0, BF, 40 etc. makes every packet look "new"
                     val flagOptions = listOf("C0", "BF", "40", "00", "75")
-                    flag = StringHelpers.decodeHex(flagOptions.random())[0]
+                    val flag = StringHelpers.decodeHex(flagOptions.random())[0]
 
                     payload[2] = flag
 
