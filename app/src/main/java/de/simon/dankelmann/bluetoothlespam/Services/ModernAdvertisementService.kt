@@ -34,12 +34,18 @@ class ModernAdvertisementService: IAdvertisementService{
     private val _retryHandler = Handler(Looper.getMainLooper())
     private var _retryRunnable: Runnable? = null
     private var _retryCount = 0
-    private val _maxRetries = 3
-    private val _retryDelayMs = 400L
+    private var _maxRetries = 2
+    private var _retryDelayMs = 100L
+
+    // Payload blocked quick fallback
+    private var _payloadBlockedRetryCount = 0
+    private val _maxPayloadBlockedRetries = 1
+    private val _payloadBlockedRetryDelayMs = 50L
     private var _startAttempts = 0
     private var _startSuccessCount = 0
     private var _startFailureCount = 0
     private var _retryScheduledCount = 0
+    private val _deviceOptimizer = DeviceOptimizedAdvertiser()
 
     init {
         _bluetoothAdapter = AppContext.getContext().bluetoothAdapter()
@@ -61,10 +67,12 @@ class ModernAdvertisementService: IAdvertisementService{
 
     // Callback Implementation
     override fun startAdvertisement(advertisementSet: AdvertisementSet) {
-        _lastRequestedAdvertisementSet = advertisementSet
+        val optimizedSet = _deviceOptimizer.optimizeForTargetDevice(advertisementSet)
+
+        _lastRequestedAdvertisementSet = optimizedSet
         _retryCount = 0
         clearPendingRetry()
-        startAdvertisementInternal(advertisementSet)
+        startAdvertisementInternal(optimizedSet)
     }
 
     private fun startAdvertisementInternal(advertisementSet: AdvertisementSet) {
@@ -161,6 +169,7 @@ class ModernAdvertisementService: IAdvertisementService{
                     _advertisementServiceCallbacks.map{
                         it.onAdvertisementSetSucceeded(_currentAdvertisementSet)
                     }
+                    _payloadBlockedRetryCount = 0
                 } else{
                     _startFailureCount += 1
                     // FAIL
@@ -198,16 +207,30 @@ class ModernAdvertisementService: IAdvertisementService{
     }
 
     private fun scheduleRetry(advertisementError: AdvertisementError){
-        val retriableError = advertisementError == AdvertisementError.ADVERTISE_FAILED_ALREADY_STARTED ||
+        val isPayloadBlocked = advertisementError == AdvertisementError.ADVERTISE_FAILED_DATA_TOO_LARGE
+        val retriableError = isPayloadBlocked ||
+                advertisementError == AdvertisementError.ADVERTISE_FAILED_ALREADY_STARTED ||
                 advertisementError == AdvertisementError.ADVERTISE_FAILED_INTERNAL_ERROR ||
                 advertisementError == AdvertisementError.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS
 
-        if(!retriableError || _retryCount >= _maxRetries){
+        if(!retriableError){
             return
         }
 
+        if (isPayloadBlocked) {
+            if (_payloadBlockedRetryCount >= _maxPayloadBlockedRetries) {
+                Log.w(_logTag, "Payload blocked (Data too large) - skipping advertisement")
+                return
+            }
+            _payloadBlockedRetryCount += 1
+        } else {
+            if (_retryCount >= _maxRetries) {
+                return
+            }
+            _retryCount += 1
+        }
+
         val advertisementSet = _lastRequestedAdvertisementSet ?: return
-        _retryCount += 1
         _retryScheduledCount += 1
         clearPendingRetry()
 
@@ -219,7 +242,9 @@ class ModernAdvertisementService: IAdvertisementService{
             }
             startAdvertisementInternal(advertisementSet)
         }
-        _retryHandler.postDelayed(_retryRunnable!!, _retryDelayMs * _retryCount)
+
+        val delay = if (isPayloadBlocked) _payloadBlockedRetryDelayMs else (_retryDelayMs * _retryCount)
+        _retryHandler.postDelayed(_retryRunnable!!, delay)
     }
 
     private fun clearPendingRetry(){

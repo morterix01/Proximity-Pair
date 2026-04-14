@@ -29,7 +29,7 @@ class  AdvertisementSetQueueHandler :IAdvertisementServiceCallback{
     private var _logTag = "AdvertisementSetQueuHandler"
     private var _advertisementService:IAdvertisementService? = null
     private var _advertisementSetCollection:AdvertisementSetCollection = AdvertisementSetCollection()
-    private var _interval:Long = 200
+    private var _interval:Long = 50
     private var _advertisementServiceCallbacks:MutableList<IAdvertisementServiceCallback> = mutableListOf()
     private var _advertisementQueueHandlerCallbacks:MutableList<IAdvertisementSetQueueHandlerCallback> = mutableListOf()
 
@@ -142,6 +142,15 @@ class  AdvertisementSetQueueHandler :IAdvertisementServiceCallback{
     fun setInterval(milliseconds:Int){
         if(milliseconds > 0){
             _interval = milliseconds.toLong()
+        }
+    }
+
+    fun setIntervalByType(type: String) {
+        _interval = when (type) {
+            "FastPair" -> 30L          // Ultra-veloce per Fast Pair
+            "Continuity" -> 40L        // Veloce per Continuity
+            "SwiftPair" -> 50L         // Standard per Swift Pair
+            else -> 100L               // Conservative per altri
         }
     }
 
@@ -350,7 +359,7 @@ class  AdvertisementSetQueueHandler :IAdvertisementServiceCallback{
         onAdvertisementSucceeded()
     }
 
-    private fun runLocalCallback(success:Boolean){
+    private fun runLocalCallback(success:Boolean, customInterval: Long? = null){
         clearPendingLocalCallback()
         _pendingLocalCallback = object : Runnable {
             override fun run() {
@@ -364,7 +373,7 @@ class  AdvertisementSetQueueHandler :IAdvertisementServiceCallback{
                 }
             }
         }
-        _callbackHandler.postDelayed(_pendingLocalCallback!!, _interval)
+        _callbackHandler.postDelayed(_pendingLocalCallback!!, customInterval ?: _interval)
     }
 
     private fun clearPendingLocalCallback(){
@@ -398,7 +407,9 @@ class  AdvertisementSetQueueHandler :IAdvertisementServiceCallback{
     }
 
     override fun onAdvertisementSetSucceeded(advertisementSet: AdvertisementSet?) {
-        runLocalCallback(true)
+        // Riduci delay per prossimo advertisement se l'intervallo è alto
+        val adjustedInterval = if (_interval <= 50) _interval else (_interval / 2)
+        runLocalCallback(true, adjustedInterval)
         _advertisementServiceCallbacks.map {
             try {
                 it.onAdvertisementSetSucceeded(advertisementSet)

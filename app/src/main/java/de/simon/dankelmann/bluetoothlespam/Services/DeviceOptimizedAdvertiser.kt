@@ -5,13 +5,13 @@ import android.util.Log
 import de.simon.dankelmann.bluetoothlespam.Enums.AdvertiseMode
 import de.simon.dankelmann.bluetoothlespam.Enums.TxPowerLevel
 import de.simon.dankelmann.bluetoothlespam.Models.AdvertisementSet
+import de.simon.dankelmann.bluetoothlespam.Models.ManufacturerSpecificData
+import de.simon.dankelmann.bluetoothlespam.Models.ServiceData
+import android.os.ParcelUuid
+import java.util.UUID
 
 /**
  * Optimizes BLE advertisement for different target devices and operating systems.
- * - iOS: Requires Apple manufacturer ID (0x004C) with specific payload format
- * - Windows: Needs Service UUIDs and TX power information
- * - Samsung: Works best with standard Android parameters
- * - Speed Mode: Removes unnecessary components for maximum throughput
  */
 class DeviceOptimizedAdvertiser {
     
@@ -27,34 +27,39 @@ class DeviceOptimizedAdvertiser {
     }
     
     /**
-     * Optimizes advertisement payload and parameters for iOS devices.
-     * iOS is very strict about BLE payload format and only detects devices
-     * with Apple manufacturer ID in manufacturer-specific data.
+     * Optimizes for iOS devices.
+     * iOS requires Apple manufacturer ID (0x004C) for many notifications to be visible.
      */
     fun optimizeForIOS(advertisementSet: AdvertisementSet): AdvertisementSet {
-        Log.d(logTag, "Optimizing for iOS - Apple manufacturer ID required")
+        Log.d(logTag, "Optimizing for iOS - Using Apple manufacturer ID")
         
+        // iOS specific parameters
         advertisementSet.advertisingSetParameters.apply {
             txPowerLevel = TxPowerLevel.TX_POWER_HIGH
             connectable = false
             legacyMode = false
         }
         
-        advertisementSet.advertiseSettings.apply {
-            advertiseMode = AdvertiseMode.ADVERTISEMODE_LOW_LATENCY
-            connectable = false
+        // iOS requires Apple Manufacturer ID (0x004C)
+        val hasAppleData = advertisementSet.advertiseData.manufacturerData.any { it.manufacturerId == 0x004C }
+        if (!hasAppleData) {
+            val appleData = ManufacturerSpecificData().apply {
+                manufacturerId = 0x004C
+                // Basic Apple payload flags if none exists
+                manufacturerSpecificData = byteArrayOf(0x02, 0x15) // Example iBeacon prefix or similar
+            }
+            advertisementSet.advertiseData.manufacturerData.add(appleData)
         }
         
         return advertisementSet
     }
     
     /**
-     * Optimizes advertisement payload and parameters for Windows devices.
-     * Windows can detect more payload types including Service UUIDs
-     * and manufacturer data, making it more flexible than iOS.
+     * Optimizes for Windows devices.
+     * Windows detects better with Service UUIDs and prefers connectable advertisements.
      */
     fun optimizeForWindows(advertisementSet: AdvertisementSet): AdvertisementSet {
-        Log.d(logTag, "Optimizing for Windows - Service UUID approach")
+        Log.d(logTag, "Optimizing for Windows - Adding service UUIDs")
         
         advertisementSet.advertisingSetParameters.apply {
             txPowerLevel = TxPowerLevel.TX_POWER_MEDIUM
@@ -62,21 +67,24 @@ class DeviceOptimizedAdvertiser {
             legacyMode = false
         }
         
-        advertisementSet.advertiseSettings.apply {
-            advertiseMode = AdvertiseMode.ADVERTISEMODE_BALANCED
-            connectable = true
+        // Windows detection often relies on specific Service UUIDs
+        val windowsUuid = UUID.fromString("0000180A-0000-1000-8000-00805F9B34FB")
+        val hasWindowsService = advertisementSet.advertiseData.services.any { it.serviceUuid?.uuid == windowsUuid }
+        if (!hasWindowsService) {
+            val serviceData = ServiceData().apply {
+                serviceUuid = ParcelUuid(windowsUuid)
+            }
+            advertisementSet.advertiseData.services.add(serviceData)
         }
         
         return advertisementSet
     }
     
     /**
-     * Optimizes advertisement payload and parameters for Samsung devices.
-     * Samsung Android is very permissive with BLE advertising and accepts
-     * most standard Android BLE formats.
+     * Optimizes for Samsung devices.
      */
     fun optimizeForSamsung(advertisementSet: AdvertisementSet): AdvertisementSet {
-        Log.d(logTag, "Optimizing for Samsung - Standard Android parameters")
+        Log.d(logTag, "Optimizing for Samsung - Using standard Android parameters")
         
         advertisementSet.advertisingSetParameters.apply {
             txPowerLevel = TxPowerLevel.TX_POWER_HIGH
@@ -84,58 +92,37 @@ class DeviceOptimizedAdvertiser {
             legacyMode = true
         }
         
-        advertisementSet.advertiseSettings.apply {
-            advertiseMode = AdvertiseMode.ADVERTISEMODE_LOW_LATENCY
-            connectable = false
-        }
-        
         return advertisementSet
     }
     
     /**
-     * Generic Android optimization for standard Android devices.
-     * Balances compatibility and performance.
+     * Generic Android optimization.
      */
     fun optimizeForGenericAndroid(advertisementSet: AdvertisementSet): AdvertisementSet {
         Log.d(logTag, "Optimizing for generic Android")
-        
         advertisementSet.advertisingSetParameters.apply {
             txPowerLevel = TxPowerLevel.TX_POWER_MEDIUM
             connectable = false
         }
-        
         return advertisementSet
     }
     
     /**
-     * Optimizes for lower latency by removing optional components.
+     * Optimizes for MAXIMUM SPEED.
      */
     fun optimizeForSpeed(advertisementSet: AdvertisementSet): AdvertisementSet {
-        Log.d(logTag, "Optimizing for MAXIMUM SPEED - Removed scan response")
-        
-        // Remove scan response to reduce transmission time
-        if (advertisementSet.scanResponse != null) {
-            Log.d(logTag, "Removing scan response for speed optimization")
-            advertisementSet.scanResponse = null
-        }
-        
+        Log.d(logTag, "Optimizing for speed - Removed scan response")
+        advertisementSet.scanResponse = null
         advertisementSet.advertisingSetParameters.apply {
-            txPowerLevel = TxPowerLevel.TX_POWER_ULTRA_LOW
+            txPowerLevel = TxPowerLevel.TX_POWER_HIGH
             connectable = false
             legacyMode = true
         }
-        
-        advertisementSet.advertiseSettings.apply {
-            advertiseMode = AdvertiseMode.ADVERTISEMODE_LOW_LATENCY
-            connectable = false
-        }
-        
         return advertisementSet
     }
     
     /**
      * Automatically detects the target device and applies optimal settings.
-     * Uses device properties (manufacturer, model) to determine OS.
      */
     fun optimizeForTargetDevice(
         advertisementSet: AdvertisementSet,
@@ -151,41 +138,14 @@ class DeviceOptimizedAdvertiser {
     }
     
     /**
-     * Detects the current device type based on build properties.
-     * This helps in automatic optimization.
+     * Detects the current device type.
      */
     private fun detectCurrentDevice(): TargetDevice {
         return when {
-            Build.MANUFACTURER.equals("Apple", ignoreCase = true) -> TargetDevice.IOS
-            Build.MANUFACTURER.equals("Samsung", ignoreCase = true) -> TargetDevice.SAMSUNG
-            Build.DEVICE.contains("windows", ignoreCase = true) -> TargetDevice.WINDOWS
+            Build.MANUFACTURER.contains("Samsung", ignoreCase = true) -> TargetDevice.SAMSUNG
+            // Note: We can't really detect target OS from local Build props, 
+            // but we can default to Generic or Speed.
             else -> TargetDevice.GENERIC_ANDROID
-        }
-    }
-    
-    /**
-     * Returns a list of all optimizations available for user selection.
-     */
-    fun getAvailableOptimizations(): List<String> {
-        return listOf(
-            "iOS (Apple)",
-            "Windows",
-            "Samsung",
-            "Generic Android",
-            "Speed Priority"
-        )
-    }
-    
-    /**
-     * Gets recommended interval based on optimization type.
-     */
-    fun getRecommendedInterval(targetDevice: TargetDevice): Long {
-        return when (targetDevice) {
-            TargetDevice.IOS -> 100L          // iOS slower to process
-            TargetDevice.WINDOWS -> 75L       // Windows medium speed
-            TargetDevice.SAMSUNG -> 50L       // Samsung fast
-            TargetDevice.GENERIC_ANDROID -> 60L // Generic: balanced
-            TargetDevice.SPEED_PRIORITY -> 20L  // Speed: ultra-fast
         }
     }
 }
