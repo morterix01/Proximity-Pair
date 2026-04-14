@@ -42,6 +42,9 @@ class ContinuityNewDevicePopUpAdvertisementSetGenerator: IAdvertisementSetGenera
         "1720" to "Beats Studio Pro",
         "1220" to "Beats Fit Pro",
         "1620" to "Beats Studio Buds+",
+        "1520" to "Apple Vision Pro",
+        "1820" to "AirPods 4",
+        "1920" to "AirPods 4 ANC",
     )
 
     companion object {
