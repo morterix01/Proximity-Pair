@@ -15,8 +15,8 @@ android {
         applicationId = "de.simon.dankelmann.bluetoothlespam"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.0.9"
+        versionCode = 4
+        versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
