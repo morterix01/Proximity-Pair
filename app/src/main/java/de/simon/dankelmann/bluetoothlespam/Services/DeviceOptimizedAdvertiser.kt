@@ -1,8 +1,9 @@
 package de.simon.dankelmann.bluetoothlespam.Services
 
-import android.bluetooth.le.AdvertisingSetParameters
 import android.os.Build
 import android.util.Log
+import de.simon.dankelmann.bluetoothlespam.Enums.AdvertiseMode
+import de.simon.dankelmann.bluetoothlespam.Enums.TxPowerLevel
 import de.simon.dankelmann.bluetoothlespam.Models.AdvertisementSet
 
 /**
@@ -34,15 +35,14 @@ class DeviceOptimizedAdvertiser {
         Log.d(logTag, "Optimizing for iOS - Apple manufacturer ID required")
         
         advertisementSet.advertisingSetParameters.apply {
-            // iOS requires high TX power for reliable detection
-            setTxPowerLevel(AdvertisingSetParameters.TX_POWER_HIGH)
-            setConnectable(false)  // iOS doesn't need connectable for notifications
-            setLegacyAdvertising(false)  // Use extended advertising for reliability
+            txPowerLevel = TxPowerLevel.TX_POWER_HIGH
+            connectable = false
+            legacyMode = false
         }
         
-        // iOS is strict about timing
         advertisementSet.advertiseSettings.apply {
-            setAdvertisingMode(android.bluetooth.le.AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+            advertiseMode = AdvertiseMode.ADVERTISEMODE_LOW_LATENCY
+            connectable = false
         }
         
         return advertisementSet
@@ -57,13 +57,14 @@ class DeviceOptimizedAdvertiser {
         Log.d(logTag, "Optimizing for Windows - Service UUID approach")
         
         advertisementSet.advertisingSetParameters.apply {
-            setTxPowerLevel(AdvertisingSetParameters.TX_POWER_MEDIUM)
-            setConnectable(true)   // Windows prefers connectable devices for pairing
-            setLegacyAdvertising(false)
+            txPowerLevel = TxPowerLevel.TX_POWER_MEDIUM
+            connectable = true
+            legacyMode = false
         }
         
         advertisementSet.advertiseSettings.apply {
-            setAdvertisingMode(android.bluetooth.le.AdvertiseSettings.ADVERTISE_MODE_BALANCED)
+            advertiseMode = AdvertiseMode.ADVERTISEMODE_BALANCED
+            connectable = true
         }
         
         return advertisementSet
@@ -78,13 +79,14 @@ class DeviceOptimizedAdvertiser {
         Log.d(logTag, "Optimizing for Samsung - Standard Android parameters")
         
         advertisementSet.advertisingSetParameters.apply {
-            setTxPowerLevel(AdvertisingSetParameters.TX_POWER_HIGH)
-            setConnectable(false)
-            setLegacyAdvertising(true)  // Samsung handles legacy mode better
+            txPowerLevel = TxPowerLevel.TX_POWER_HIGH
+            connectable = false
+            legacyMode = true
         }
         
         advertisementSet.advertiseSettings.apply {
-            setAdvertisingMode(android.bluetooth.le.AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+            advertiseMode = AdvertiseMode.ADVERTISEMODE_LOW_LATENCY
+            connectable = false
         }
         
         return advertisementSet
@@ -98,19 +100,15 @@ class DeviceOptimizedAdvertiser {
         Log.d(logTag, "Optimizing for generic Android")
         
         advertisementSet.advertisingSetParameters.apply {
-            setTxPowerLevel(AdvertisingSetParameters.TX_POWER_MEDIUM)
-            setConnectable(false)
+            txPowerLevel = TxPowerLevel.TX_POWER_MEDIUM
+            connectable = false
         }
         
         return advertisementSet
     }
     
     /**
-     * Aggressively optimizes for maximum speed by removing unnecessary components.
-     * Recommended for spam/flooding scenarios where speed is critical.
-     * - Removes scan response data
-     * - Reduces TX power (faster transmission)
-     * - Minimizes data size
+     * Optimizes for lower latency by removing optional components.
      */
     fun optimizeForSpeed(advertisementSet: AdvertisementSet): AdvertisementSet {
         Log.d(logTag, "Optimizing for MAXIMUM SPEED - Removed scan response")
@@ -122,14 +120,14 @@ class DeviceOptimizedAdvertiser {
         }
         
         advertisementSet.advertisingSetParameters.apply {
-            // Ultra-low TX power = faster transmission (counter-intuitive but true)
-            setTxPowerLevel(AdvertisingSetParameters.TX_POWER_MIN)
-            setConnectable(false)
-            setLegacyAdvertising(true)  // Legacy mode is faster to transmit
+            txPowerLevel = TxPowerLevel.TX_POWER_ULTRA_LOW
+            connectable = false
+            legacyMode = true
         }
         
         advertisementSet.advertiseSettings.apply {
-            setAdvertisingMode(android.bluetooth.le.AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+            advertiseMode = AdvertiseMode.ADVERTISEMODE_LOW_LATENCY
+            connectable = false
         }
         
         return advertisementSet

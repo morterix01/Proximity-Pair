@@ -159,14 +159,14 @@ object AdvertisementSpeedOptimizer {
         val recommendations = mutableListOf<String>()
         
         // Analyze payload size
-        val payloadSize = advertisementSet.advertiseData.build().bytes.size
+        val payloadSize = estimatePayloadSize(advertisementSet)
         
         if (payloadSize > 30) {
             recommendations.add("⚠️ Payload is large (${payloadSize}B). Consider removing non-essential data.")
         }
         
         if (advertisementSet.scanResponse != null) {
-            val scanResponseSize = advertisementSet.scanResponse!!.build().bytes.size
+            val scanResponseSize = estimateScanResponseSize(advertisementSet)
             if (scanResponseSize > 10) {
                 recommendations.add("💡 Scan response is large (${scanResponseSize}B). Remove for speed.")
             }
@@ -186,6 +186,33 @@ object AdvertisementSpeedOptimizer {
         }
         
         return recommendations
+    }
+
+    private fun estimatePayloadSize(advertisementSet: AdvertisementSet): Int {
+        var size = 0
+        size += advertisementSet.advertiseData.manufacturerData.sumOf { it.manufacturerSpecificData.size + 2 }
+        size += advertisementSet.advertiseData.services.sumOf { service ->
+            val uuidBytes = if (service.serviceUuid != null) 16 else 0
+            val dataBytes = service.serviceData?.size ?: 0
+            uuidBytes + dataBytes
+        }
+        size += if (advertisementSet.advertiseData.includeDeviceName) 8 else 0
+        size += if (advertisementSet.advertiseData.includeTxPower) 1 else 0
+        return size
+    }
+
+    private fun estimateScanResponseSize(advertisementSet: AdvertisementSet): Int {
+        val scanResponse = advertisementSet.scanResponse ?: return 0
+        var size = 0
+        size += scanResponse.manufacturerData.sumOf { it.manufacturerSpecificData.size + 2 }
+        size += scanResponse.services.sumOf { service ->
+            val uuidBytes = if (service.serviceUuid != null) 16 else 0
+            val dataBytes = service.serviceData?.size ?: 0
+            uuidBytes + dataBytes
+        }
+        size += if (scanResponse.includeDeviceName) 8 else 0
+        size += if (scanResponse.includeTxPower) 1 else 0
+        return size
     }
     
     /**
